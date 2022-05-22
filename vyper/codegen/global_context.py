@@ -1,7 +1,7 @@
 from typing import Optional
 
 from vyper import ast as vy_ast
-from vyper.ast.signatures.function_signature import VariableRecord
+from vyper.ast.signatures.function_signature import VariableRecord, FunctionSignature
 from vyper.codegen.types import parse_type
 from vyper.exceptions import CompilerPanic, InvalidType, StructureException
 from vyper.semantics.types.user.enum import EnumPrimitive
@@ -26,6 +26,13 @@ class GlobalContext:
         self._function_defs = list()
         self._nonrentrant_counter = 0
         self._nonrentrant_keys = dict()
+
+    @property
+    def all_functions(self):
+        ret = self._function_defs
+        for t in self._interfaces.values():
+            ret.extend([f.func_ast_code for f in t if isinstance(f, FunctionSignature)])
+        return ret
 
     # Parse top-level functions and variables
     @classmethod

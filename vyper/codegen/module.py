@@ -21,7 +21,7 @@ def _topsort_helper(functions, lookup):
     for f in functions:
         # called_functions is a list of ContractFunctions, need to map
         # back to FunctionDefs.
-        callees = [lookup[t.name] for t in f._metadata["type"].called_functions]
+        callees = [lookup[(t.module_name, t.name)] for t in f._metadata["type"].called_functions]
         ret.extend(_topsort_helper(callees, lookup))
         ret.append(f)
 
@@ -29,7 +29,7 @@ def _topsort_helper(functions, lookup):
 
 
 def _topsort(functions):
-    lookup = {f.name: f for f in functions}
+    lookup = {(f._metadata["type"].module_name, f.name): f for f in functions}
     # strip duplicates
     return list(dict.fromkeys(_topsort_helper(functions, lookup)))
 
@@ -180,7 +180,7 @@ def _runtime_ir(runtime_functions, all_sigs, global_ctx):
 # and generate the runtime and deploy IR, also return the dict of all signatures
 def generate_ir_for_module(global_ctx: GlobalContext) -> Tuple[IRnode, IRnode, FunctionSignatures]:
     # order functions so that each function comes after all of its callees
-    function_defs = _topsort(global_ctx._function_defs)
+    function_defs = _topsort(global_ctx.all_functions)
 
     # FunctionSignatures for all interfaces defined in this module
     all_sigs: Dict[str, FunctionSignatures] = {}

@@ -93,6 +93,7 @@ class ContractFunction(BaseTypeDefinition):
     def __init__(
         self,
         name: str,
+        module_name: str,
         arguments: OrderedDict,
         # TODO rename to something like positional_args, keyword_args
         min_arg_count: int,
@@ -111,6 +112,7 @@ class ContractFunction(BaseTypeDefinition):
             is_public=(function_visibility == FunctionVisibility.EXTERNAL),
         )
         self.name = name
+        self.module_name = module_name
         self.arguments = arguments
         self.min_arg_count = min_arg_count
         self.max_arg_count = max_arg_count
@@ -181,7 +183,7 @@ class ContractFunction(BaseTypeDefinition):
 
     @classmethod
     def from_FunctionDef(
-        cls, node: vy_ast.FunctionDef, is_interface: Optional[bool] = False
+cls, node: vy_ast.FunctionDef, module_name: str, is_interface: Optional[bool] = False
     ) -> "ContractFunction":
         """
         Generate a `ContractFunction` object from a `FunctionDef` node.
@@ -354,7 +356,7 @@ class ContractFunction(BaseTypeDefinition):
         else:
             raise InvalidType("Function return value must be a type name or tuple", node.returns)
 
-        return cls(node.name, arguments, min_arg_count, max_arg_count, return_type, **kwargs)
+        return cls(node.name, module_name, arguments, min_arg_count, max_arg_count, return_type, **kwargs)
 
     def set_reentrancy_key_position(self, position: StorageSlot) -> None:
         if hasattr(self, "reentrancy_key_position"):

@@ -261,7 +261,7 @@ class ModuleNodeVisitor(VyperNodeVisitorBase):
             raise exc.with_annotation(node) from None
 
     def visit_FunctionDef(self, node):
-        func = ContractFunction.from_FunctionDef(node)
+        func = ContractFunction.from_FunctionDef(node, module_name=self.ast.name)
 
         try:
             self.namespace["self"].add_member(func.name, func)

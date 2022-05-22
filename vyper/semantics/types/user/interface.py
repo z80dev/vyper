@@ -65,6 +65,8 @@ class InterfacePrimitive:
     def get_member(self, key, node):
         if key in self.events:
             return self.events[key]
+        if key in self.members:
+            return self.members[key]
         suggestions_str = get_levenshtein_error_suggestions(key, self.events, 0.3)
         raise UnknownAttribute(f"{self} has no member '{key}'. {suggestions_str}", node)
 
@@ -188,24 +190,23 @@ def _get_module_definitions(base_node: vy_ast.Module) -> Tuple[OrderedDict, Dict
     functions: OrderedDict = OrderedDict()
     events: Dict = {}
     for node in base_node.get_children(vy_ast.FunctionDef):
-        if "external" in [i.id for i in node.decorator_list if isinstance(i, vy_ast.Name)]:
-            func = ContractFunction.from_FunctionDef(node)
-            if node.name in functions:
-                # compare the input arguments of the new function and the previous one
-                # if one function extends the inputs, this is a valid function name overload
-                existing_args = list(functions[node.name].arguments)
-                new_args = list(func.arguments)
-                for a, b in zip(existing_args, new_args):
-                    if not isinstance(a, type(b)):
-                        raise NamespaceCollision(
-                            f"Interface contains multiple functions named '{node.name}' "
-                            "with incompatible input types",
-                            base_node,
-                        )
-                if len(new_args) <= len(existing_args):
-                    # only keep the `ContractFunction` with the longest set of input args
-                    continue
-            functions[node.name] = func
+        func = ContractFunction.from_FunctionDef(node, base_node.name)
+        if node.name in functions:
+            # compare the input arguments of the new function and the previous one
+            # if one function extends the inputs, this is a valid function name overload
+            existing_args = list(functions[node.name].arguments)
+            new_args = list(func.arguments)
+            for a, b in zip(existing_args, new_args):
+                if not isinstance(a, type(b)):
+                    raise NamespaceCollision(
+                        f"Interface contains multiple functions named '{node.name}' "
+                        "with incompatible input types",
+                        base_node,
+                    )
+            if len(new_args) <= len(existing_args):
+                # only keep the `ContractFunction` with the longest set of input args
+                continue
+        functions[node.name] = func
     for node in base_node.get_children(vy_ast.AnnAssign, {"annotation.func.id": "public"}):
         name = node.target.id
         if name in functions:

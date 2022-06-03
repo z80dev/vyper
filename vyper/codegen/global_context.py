@@ -96,6 +96,7 @@ class GlobalContext:
                 global_ctx._interfaces[interface_name] = extract_sigs(
                     interface_codes[interface_name], interface_name
                 )
+
             else:
                 raise StructureException("Invalid top-level statement", item)
 

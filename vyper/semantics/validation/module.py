@@ -314,8 +314,10 @@ def _add_import(
         raise UndeclaredDefinition(f"Unknown interface: {name}. {suggestions_str}", node)
 
     if interface_codes[name]["type"] == "vyper":
-        interface_ast = vy_ast.parse_to_ast(interface_codes[name]["code"], contract_name=name)
-        type_ = namespace["interface"].build_primitive_from_node(interface_ast)
+        module_ast = vy_ast.parse_to_ast(interface_codes[name]["code"], contract_name=name)
+        type_ = namespace["interface"].build_primitive_from_node(module_ast)
+        print(name, namespace.get(name))
+        namespace[name] = module_ast
     elif interface_codes[name]["type"] == "json":
         type_ = namespace["interface"].build_primitive_from_abi(name, interface_codes[name]["code"])
     else:

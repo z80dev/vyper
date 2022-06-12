@@ -112,8 +112,7 @@ class InterfacePrimitive:
         if unimplemented:
             missing_str = ", ".join(sorted(unimplemented))
             raise InterfaceViolation(
-                f"Contract does not implement all interface functions: {missing_str}",
-                node,
+                f"Contract does not implement all interface functions: {missing_str}", node
             )
 
     def to_abi_dict(self) -> List[Dict]:

@@ -183,7 +183,7 @@ class ContractFunction(BaseTypeDefinition):
 
     @classmethod
     def from_FunctionDef(
-cls, node: vy_ast.FunctionDef, module_name: str, is_interface: Optional[bool] = False
+        cls, node: vy_ast.FunctionDef, module_name: str, is_interface: Optional[bool] = False
     ) -> "ContractFunction":
         """
         Generate a `ContractFunction` object from a `FunctionDef` node.
@@ -356,7 +356,9 @@ cls, node: vy_ast.FunctionDef, module_name: str, is_interface: Optional[bool] = 
         else:
             raise InvalidType("Function return value must be a type name or tuple", node.returns)
 
-        return cls(node.name, module_name, arguments, min_arg_count, max_arg_count, return_type, **kwargs)
+        return cls(
+            node.name, module_name, arguments, min_arg_count, max_arg_count, return_type, **kwargs
+        )
 
     def set_reentrancy_key_position(self, position: StorageSlot) -> None:
         if hasattr(self, "reentrancy_key_position"):

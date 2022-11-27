@@ -323,8 +323,8 @@ def _add_import(
             from vyper.semantics.analysis import validate_semantics
             with override_global_namespace(Namespace()):
                 validate_semantics(module_ast, interface_codes)
-            interface_codes[name]["_analysis"] = module_ast._metadata["type"]
-        type_ = interface_codes[name]["_analysis"]
+            interface_codes[name]["_ast"] = module_ast
+        type_ = interface_codes[name]["_ast"]._metadata["type"]
     elif interface_codes[name]["type"] == "json":
         type_ = InterfaceT.from_json_abi(name, interface_codes[name]["code"])  # type: ignore
     else:

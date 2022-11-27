@@ -108,7 +108,7 @@ def extract_sigs(sig_code, interface_name=None):
     if sig_code["type"] == "vyper":
         interface_ast = [
             i
-            for i in vy_ast.parse_to_ast(sig_code["code"], contract_name=interface_name)
+            for i in sig_code["_ast"]
             # all the nodes visited by ModuleNodeVisitor.
             if isinstance(
                 i,

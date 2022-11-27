@@ -8,10 +8,7 @@ from web3.contract import Contract, mk_collision_prop
 from web3.providers.eth_tester import EthereumTesterProvider
 
 from vyper import compiler
-
-from .grammar.conftest import get_lark_grammar
-
-LARK_GRAMMAR = get_lark_grammar()
+from vyper.ast.grammar import parse_vyper_source
 
 
 class VyperMethod:
@@ -114,7 +111,7 @@ def _get_contract(w3, source_code, no_optimize, *args, **kwargs):
         evm_version=kwargs.pop("evm_version", None),
         show_gas_estimates=True,  # Enable gas estimates for testing
     )
-    LARK_GRAMMAR.parse(source_code + "\n")  # Test grammar.
+    parse_vyper_source(source_code)  # Test grammar.
     abi = out["abi"]
     bytecode = out["bytecode"]
     value = kwargs.pop("value_in_eth", 0) * 10 ** 18  # Handle deploying with an eth value.
@@ -127,7 +124,7 @@ def _get_contract(w3, source_code, no_optimize, *args, **kwargs):
     return w3.eth.contract(address, abi=abi, bytecode=bytecode, ContractFactoryClass=VyperContract)
 
 
-def _deploy_factory_for(w3, source_code, no_optimize, initcode_prefix=b"", **kwargs):
+def _deploy_blueprint_for(w3, source_code, no_optimize, initcode_prefix=b"", **kwargs):
     out = compiler.compile_code(
         source_code,
         ["abi", "bytecode"],
@@ -136,7 +133,7 @@ def _deploy_factory_for(w3, source_code, no_optimize, initcode_prefix=b"", **kwa
         evm_version=kwargs.pop("evm_version", None),
         show_gas_estimates=True,  # Enable gas estimates for testing
     )
-    LARK_GRAMMAR.parse(source_code + "\n")  # Test grammar.
+    parse_vyper_source(source_code)  # Test grammar.
     abi = out["abi"]
     bytecode = HexBytes(initcode_prefix) + HexBytes(out["bytecode"])
     bytecode_len = len(bytecode)
@@ -165,11 +162,11 @@ def _deploy_factory_for(w3, source_code, no_optimize, initcode_prefix=b"", **kwa
 
 
 @pytest.fixture(scope="module")
-def deploy_factory_for(w3, no_optimize):
-    def deploy_factory_for(source_code, *args, **kwargs):
-        return _deploy_factory_for(w3, source_code, no_optimize, *args, **kwargs)
+def deploy_blueprint_for(w3, no_optimize):
+    def deploy_blueprint_for(source_code, *args, **kwargs):
+        return _deploy_blueprint_for(w3, source_code, no_optimize, *args, **kwargs)
 
-    return deploy_factory_for
+    return deploy_blueprint_for
 
 
 @pytest.fixture(scope="module")

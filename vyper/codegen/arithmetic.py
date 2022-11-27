@@ -1,5 +1,6 @@
 import decimal
 import math
+from typing import Tuple
 
 from vyper.codegen.core import clamp, clamp_basetype
 from vyper.codegen.ir_node import IRnode
@@ -28,20 +29,21 @@ def calculate_largest_power(a: int, num_bits: int, is_signed: bool) -> int:
         Largest possible value for `b` where the result does not overflow
         `num_bits`
     """
-    if num_bits % 8:
+    if num_bits % 8:  # pragma: no cover
         raise CompilerPanic("Type is not a modulo of 8")
 
+    if a in (-1, 0, 1):  # pragma: no cover
+        raise CompilerPanic("Exponential operation is useless!")
+
     value_bits = num_bits - (1 if is_signed else 0)
-    if a >= 2 ** value_bits:
+    if a >= 2 ** value_bits:  # pragma: no cover
         raise TypeCheckFailure("Value is too large and will always throw")
-    elif a < -(2 ** value_bits):
+    if a < -(2 ** value_bits):  # pragma: no cover
         raise TypeCheckFailure("Value is too small and will always throw")
 
     a_is_negative = a < 0
-    a = abs(a)  # No longer need to know if it's signed or not
 
-    if a in (0, 1):
-        raise CompilerPanic("Exponential operation is useless!")
+    a = abs(a)  # No longer need to know if it's signed or not
 
     # NOTE: There is an edge case if `a` were left signed where the following
     #       operation would not work (`ln(a)` is undefined if `a <= 0`)
@@ -68,15 +70,16 @@ def calculate_largest_power(a: int, num_bits: int, is_signed: bool) -> int:
         assert num_iterations < 10000
 
     # Edge case: If a is negative and the values of a and b are such that:
-    #               (a) ** (b + 1) == -(2 ** value_bits)
-    #            we can actually squeak one more out of it because it's on the edge
+    #   (-a) ** (b + 1) == -(2 ** value_bits)
+    # we can squeak one more out of it because lower bound of signed ints
+    # is slightly wider than upper bound
     if a_is_negative and (-a) ** (b + 1) == -(2 ** value_bits):  # NOTE: a = abs(a)
         return b + 1
     else:
         return b  # Exact
 
 
-def calculate_largest_base(b: int, num_bits: int, is_signed: bool) -> int:
+def calculate_largest_base(b: int, num_bits: int, is_signed: bool) -> Tuple[int, int]:
     """
     For a given power `b`, compute the maximum base `a` that will not produce an
     overflow in the equation `a ** b`
@@ -92,20 +95,26 @@ def calculate_largest_base(b: int, num_bits: int, is_signed: bool) -> int:
 
     Returns
     -------
-    int
-        Largest possible value for `a` where the result does not overflow
-        `num_bits`
+    Tuple[int, int]
+        Smallest and largest possible values for `a` where the result
+        does not overflow `num_bits`.
+
+        Note that the lower and upper bounds are not always negatives of
+        each other, due to lower/upper bounds for int_<value_bits> being
+        slightly asymmetric.
     """
-    if num_bits % 8:
+    if num_bits % 8:  # pragma: no cover
         raise CompilerPanic("Type is not a modulo of 8")
-    if b < 0:
+
+    if b in (0, 1):  # pragma: no cover
+        raise CompilerPanic("Exponential operation is useless!")
+
+    if b < 0:  # pragma: no cover
         raise TypeCheckFailure("Cannot calculate negative exponents")
 
     value_bits = num_bits - (1 if is_signed else 0)
-    if b > value_bits:
+    if b > value_bits:  # pragma: no cover
         raise TypeCheckFailure("Value is too large and will always throw")
-    elif b < 2:
-        return 2 ** value_bits - 1  # Maximum value for type
 
     # CMC 2022-05-06 TODO we should be able to do this with algebra
     # instead of looping):
@@ -126,7 +135,15 @@ def calculate_largest_base(b: int, num_bits: int, is_signed: bool) -> int:
         a -= 1
         num_iterations += 1
         assert num_iterations < 10000
-    return a
+
+    if not is_signed:
+        return 0, a
+
+    if (a + 1) ** b == (2 ** value_bits):
+        # edge case: lower bound is slightly wider than upper bound
+        return -(a + 1), a
+    else:
+        return -a, a
 
 
 # def safe_add(x: IRnode, y: IRnode) -> IRnode:
@@ -329,27 +346,36 @@ def safe_pow(x, y):
         # type checker should have caught this
         raise TypeCheckFailure("non-integer pow")
 
-    if x.is_literal:
-        # cannot pass 1 or 0 to `calculate_largest_power`
-        if x.value == 1:
-            return IRnode.from_list([1])
-        if x.value == 0:
-            return IRnode.from_list(["iszero", y])
+    GE = "sge" if num_info.is_signed else "ge"
 
-        upper_bound = calculate_largest_power(x.value, num_info.bits, num_info.is_signed) + 1
-        # for signed integers, this also prevents negative values
-        ok = ["lt", y, upper_bound]
+    if x.is_literal:
+        # cannot pass -1, 0 or 1 to `calculate_largest_power`
+        if x.value in (-1, 0, 1):
+            # not strictly needed, but consistent with other bases
+            # (note: unsigned (ge y 0) will get optimized out)
+            ok = [GE, y, 0]
+        else:
+            upper_bound = calculate_largest_power(x.value, num_info.bits, num_info.is_signed)
+            # for signed integers, this also prevents negative values
+            ok = ["le", y, upper_bound]
 
     elif y.is_literal:
-        upper_bound = calculate_largest_base(y.value, num_info.bits, num_info.is_signed) + 1
-        if num_info.is_signed:
-            ok = ["and", ["slt", x, upper_bound], ["sgt", x, -upper_bound]]
+        # cannot pass 0 or 1 to `calculate_largest_base`
+        if y.value in (0, 1):
+            ok = [1]
         else:
-            ok = ["lt", x, upper_bound]
+            lower_bound, upper_bound = calculate_largest_base(
+                y.value, num_info.bits, num_info.is_signed
+            )
+            if num_info.is_signed:
+                ok = ["and", ["sge", x, lower_bound], ["sle", x, upper_bound]]
+            else:
+                ok = ["le", x, upper_bound]
     else:
         # `a ** b` where neither `a` or `b` are known
         # TODO this is currently unreachable, once we implement a way to do it safely
         # remove the check in `vyper/context/types/value/numeric.py`
         return
 
-    return IRnode.from_list(["seq", ["assert", ok], ["exp", x, y]])
+    assertion = IRnode.from_list(["assert", ok], error_msg="safepow")
+    return IRnode.from_list(["seq", assertion, ["exp", x, y]])

@@ -158,7 +158,7 @@ def _slice(start: uint256, length: uint256):
 @external
 def foo(x: uint256, y: uint256) -> (uint256, String[12]):
     self.bytez = "hello, world"
-    dont_clobber_me: uint256 = MAX_UINT256
+    dont_clobber_me: uint256 = max_value(uint256)
     self._slice(x, y)
     return dont_clobber_me, self.bytez
     """
@@ -183,6 +183,23 @@ def dice() -> Bytes[1]:
 
     c = get_contract(code)
     assert c.dice() == b"A"
+
+
+def test_slice_immutable_length_arg(get_contract_with_gas_estimation):
+    code = """
+LENGTH: immutable(uint256)
+
+@external
+def __init__():
+    LENGTH = 5
+
+@external
+def do_slice(inp: Bytes[50]) -> Bytes[50]:
+    return slice(inp, 0, LENGTH)
+    """
+    c = get_contract_with_gas_estimation(code)
+    x = c.do_slice(b"abcdefghijklmnopqrstuvwxyz1234")
+    assert x == b"abcde", x
 
 
 def test_slice_at_end(get_contract):

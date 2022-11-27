@@ -26,7 +26,7 @@ from vyper.utils import GAS_CALLDATACOPY_WORD, GAS_CODECOPY_WORD, GAS_IDENTITY, 
 # propagate revert message when calls to external contracts fail
 def check_external_call(call_ir):
     copy_revertdata = ["returndatacopy", 0, 0, "returndatasize"]
-    revert = ["revert", 0, "returndatasize"]
+    revert = IRnode.from_list(["revert", 0, "returndatasize"], error_msg="external call failed")
 
     propagate_revert_ir = ["seq", copy_revertdata, revert]
     return ["if", ["iszero", call_ir], propagate_revert_ir]
@@ -280,7 +280,8 @@ def append_dyn_array(darray_node, elem_node):
     with darray_node.cache_when_complex("darray") as (b1, darray_node):
         len_ = get_dyn_array_count(darray_node)
         with len_.cache_when_complex("old_darray_len") as (b2, len_):
-            ret.append(["assert", ["lt", len_, darray_node.typ.count]])
+            assertion = ["assert", ["lt", len_, darray_node.typ.count]]
+            ret.append(IRnode.from_list(assertion, error_msg=f"{darray_node.typ} bounds check"))
             ret.append(STORE(darray_node, ["add", len_, 1]))
             # NOTE: typechecks elem_node
             # NOTE skip array bounds check bc we already asserted len two lines up
@@ -544,7 +545,14 @@ def STORE(ptr: IRnode, val: IRnode) -> IRnode:
         raise CompilerPanic(f"unreachable {ptr.location}")  # pragma: notest
 
     _check = _freshname(f"{op}_")
-    return IRnode.from_list(["seq", eval_once_check(_check), [op, ptr, val]])
+
+    store = [op, ptr, val]
+    # don't use eval_once_check for memory, immutables because it interferes
+    # with optimizer
+    if ptr.location in (MEMORY, IMMUTABLES):
+        return IRnode.from_list(store)
+
+    return IRnode.from_list(["seq", eval_once_check(_check), store])
 
 
 # Unwrap location
@@ -619,7 +627,7 @@ def _check_assign_bytes(left, right):
 
 
 def _check_assign_list(left, right):
-    def FAIL():  # pragma: nocover
+    def FAIL():  # pragma: no cover
         raise TypeCheckFailure(f"assigning {right.typ} to {left.typ}")
 
     if left.value == "multi":
@@ -653,7 +661,7 @@ def _check_assign_list(left, right):
 
 
 def _check_assign_tuple(left, right):
-    def FAIL():  # pragma: nocover
+    def FAIL():  # pragma: no cover
         raise TypeCheckFailure(f"assigning {right.typ} to {left.typ}")
 
     if not isinstance(right.typ, left.typ.__class__):
@@ -688,7 +696,7 @@ def _check_assign_tuple(left, right):
 # this function is more of a sanity check for typechecking internally
 # generated assignments
 def check_assign(left, right):
-    def FAIL():  # pragma: nocover
+    def FAIL():  # pragma: no cover
         raise TypeCheckFailure(f"assigning {right.typ} to {left.typ} {left} {right}")
 
     if isinstance(left.typ, ByteArrayLike):
@@ -704,7 +712,7 @@ def check_assign(left, right):
         #    FAIL()  # pragma: notest
         pass
 
-    else:  # pragma: nocover
+    else:  # pragma: no cover
         FAIL()
 
 
@@ -924,23 +932,22 @@ def sar(bits, x):
     if version_check(begin="constantinople"):
         return ["sar", bits, x]
 
-    # emulate for older arches. keep in mind note from EIP 145:
-    # "This is not equivalent to PUSH1 2 EXP SDIV, since it rounds
-    # differently. See SDIV(-1, 2) == 0, while SAR(-1, 1) == -1."
-    return ["sdiv", ["add", ["slt", x, 0], x], ["exp", 2, bits]]
+    raise NotImplementedError("no SAR emulation for pre-constantinople EVM")
 
 
 def clamp_bytestring(ir_node):
     t = ir_node.typ
     if not isinstance(t, ByteArrayLike):
         raise CompilerPanic(f"{t} passed to clamp_bytestring")  # pragma: notest
-    return ["assert", ["le", get_bytearray_length(ir_node), t.maxlen]]
+    ret = ["assert", ["le", get_bytearray_length(ir_node), t.maxlen]]
+    return IRnode.from_list(ret, error_msg=f"{ir_node.typ} bounds check")
 
 
 def clamp_dyn_array(ir_node):
     t = ir_node.typ
     assert isinstance(t, DArrayType)
-    return ["assert", ["le", get_dyn_array_count(ir_node), t.count]]
+    ret = ["assert", ["le", get_dyn_array_count(ir_node), t.count]]
+    return IRnode.from_list(ret, error_msg=f"{ir_node.typ} bounds check")
 
 
 # clampers for basetype
@@ -973,7 +980,7 @@ def clamp_basetype(ir_node):
         ret = int_clamp(ir_node, 160)
     elif t.typ in ("bool",):
         ret = int_clamp(ir_node, 1)
-    else:  # pragma: nocover
+    else:  # pragma: no cover
         raise CompilerPanic(f"{t} passed to clamp_basetype")
 
     return IRnode.from_list(ret, typ=ir_node.typ, error_msg=f"validate {t}")
@@ -987,6 +994,9 @@ def int_clamp(ir_node, bits, signed=False):
     """
     if bits >= 256:
         raise CompilerPanic(f"invalid clamp: {bits}>=256 ({ir_node})")  # pragma: notest
+
+    u = "u" if not signed else ""
+    msg = f"{u}int{bits} bounds check"
     with ir_node.cache_when_complex("val") as (b, val):
         if signed:
             # example for bits==128:
@@ -999,19 +1009,22 @@ def int_clamp(ir_node, bits, signed=False):
         else:
             assertion = ["assert", ["iszero", shr(bits, val)]]
 
+        assertion = IRnode.from_list(assertion, error_msg=msg)
+
         ret = b.resolve(["seq", assertion, val])
 
-    # TODO fix this annotation
-    return IRnode.from_list(ret, annotation=f"int_clamp {ir_node.typ}")
+    return IRnode.from_list(ret, annotation=msg)
 
 
 def bytes_clamp(ir_node: IRnode, n_bytes: int) -> IRnode:
     if not (0 < n_bytes <= 32):
         raise CompilerPanic(f"bad type: bytes{n_bytes}")
+    msg = f"bytes{n_bytes} bounds check"
     with ir_node.cache_when_complex("val") as (b, val):
-        assertion = ["assert", ["iszero", shl(n_bytes * 8, val)]]
+        assertion = IRnode.from_list(["assert", ["iszero", shl(n_bytes * 8, val)]], error_msg=msg)
         ret = b.resolve(["seq", assertion, val])
-    return IRnode.from_list(ret, annotation=f"bytes{n_bytes}_clamp")
+
+    return IRnode.from_list(ret, annotation=msg)
 
 
 # e.g. for int8, promote 255 to -1
@@ -1032,7 +1045,7 @@ def clamp(op, arg, bound):
 def clamp_nonzero(arg):
     # TODO: use clamp("ne", arg, 0) once optimizer rules can handle it
     with IRnode.from_list(arg).cache_when_complex("should_nonzero") as (b1, arg):
-        check = IRnode.from_list(["assert", arg], error_msg="clamp_nonzero")
+        check = IRnode.from_list(["assert", arg], error_msg="check nonzero")
         ret = ["seq", check, arg]
         return IRnode.from_list(b1.resolve(ret), typ=arg.typ)
 

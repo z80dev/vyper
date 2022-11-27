@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from vyper.ast.signatures.interface import extract_sigs
-from vyper.builtin_interfaces import ERC20, ERC721
+from vyper.builtins.interfaces import ERC20, ERC721
 from vyper.cli.utils import extract_file_interface_imports
 from vyper.compiler import compile_code, compile_codes
 from vyper.exceptions import ArgumentException, InterfaceViolation, StructureException
@@ -267,6 +267,43 @@ def test():
 
     test_c.test(transact={})
     assert erc20.balanceOf(sender) == 1000
+
+
+@pytest.mark.parametrize(
+    "kwarg,typ,expected",
+    [
+        ("max_value(uint256)", "uint256", 2 ** 256 - 1),
+        ("min_value(int128)", "int128", -(2 ** 127)),
+        ("empty(uint8[2])", "uint8[2]", [0, 0]),
+        ('method_id("vyper()", output_type=bytes4)', "bytes4", b"\x82\xcbE\xfb"),
+        ("epsilon(decimal)", "decimal", Decimal("1E-10")),
+    ],
+)
+def test_external_call_to_interface_kwarg(get_contract, kwarg, typ, expected):
+    code_a = f"""
+@external
+@view
+def foo(_max: {typ} = {kwarg}) -> {typ}:
+    return _max
+    """
+
+    code_b = f"""
+import one as ContractA
+
+@external
+@view
+def bar(a_address: address) -> {typ}:
+    return ContractA(a_address).foo()
+    """
+
+    contract_a = get_contract(code_a)
+    contract_b = get_contract(
+        code_b,
+        *[contract_a.address],
+        interface_codes={"ContractA": {"type": "vyper", "code": code_a}},
+    )
+
+    assert contract_b.bar(contract_a.address) == expected
 
 
 def test_external_call_to_builtin_interface(w3, get_contract):

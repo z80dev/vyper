@@ -16,7 +16,7 @@ for t in sorted(SIGNED_INTEGER_TYPES):
 
 
 @pytest.mark.parametrize("typ,lo,hi,bits", PARAMS)
-def test_exponent_base_zero(get_contract, typ, lo, hi, bits):
+def test_exponent_base_zero(get_contract, assert_tx_failed, typ, lo, hi, bits):
     code = f"""
 @external
 def foo(x: {typ}) -> {typ}:
@@ -25,14 +25,14 @@ def foo(x: {typ}) -> {typ}:
     c = get_contract(code)
     assert c.foo(0) == 1
     assert c.foo(1) == 0
-    assert c.foo(-1) == 0
-
-    assert c.foo(lo) == 0
     assert c.foo(hi) == 0
+
+    assert_tx_failed(lambda: c.foo(-1))
+    assert_tx_failed(lambda: c.foo(lo))  # note: lo < 0
 
 
 @pytest.mark.parametrize("typ,lo,hi,bits", PARAMS)
-def test_exponent_base_one(get_contract, typ, lo, hi, bits):
+def test_exponent_base_one(get_contract, assert_tx_failed, typ, lo, hi, bits):
     code = f"""
 @external
 def foo(x: {typ}) -> {typ}:
@@ -41,9 +41,65 @@ def foo(x: {typ}) -> {typ}:
     c = get_contract(code)
     assert c.foo(0) == 1
     assert c.foo(1) == 1
-    assert c.foo(-1) == 1
-    assert c.foo(lo) == 1
     assert c.foo(hi) == 1
+
+    assert_tx_failed(lambda: c.foo(-1))
+    assert_tx_failed(lambda: c.foo(lo))
+
+
+def test_exponent_base_minus_one(get_contract):
+    # #2986
+    # NOTE!!! python order of precedence means -1 ** x != (-1) ** x
+    code = """
+@external
+def foo(x: int256) -> int256:
+    y: int256 = (-1) ** x
+    return y
+    """
+    c = get_contract(code)
+    for x in range(5):
+        assert c.foo(x) == (-1) ** x
+
+
+# TODO: make this test pass
+@pytest.mark.parametrize("base", (0, 1))
+def test_exponent_negative_power(get_contract, assert_tx_failed, base):
+    # #2985
+    code = f"""
+@external
+def bar() -> int16:
+    x: int16 = -2
+    return {base} ** x
+    """
+    c = get_contract(code)
+    # known bug: 2985
+    assert_tx_failed(lambda: c.bar())
+
+
+def test_exponent_min_int16(get_contract):
+    # #2987
+    code = """
+@external
+def foo() -> int16:
+    x: int16 = -8
+    y: int16 = x ** 5
+    return y
+    """
+    c = get_contract(code)
+    assert c.foo() == -(2 ** 15)
+
+
+@pytest.mark.parametrize("base,power", itertools.product((-2, -1, 0, 1, 2), (0, 1)))
+def test_exponent_power_zero_one(get_contract, base, power):
+    # #2989
+    code = f"""
+@external
+def foo() -> int256:
+    x: int256 = {base}
+    return x ** {power}
+    """
+    c = get_contract(code)
+    assert c.foo() == base ** power
 
 
 @pytest.mark.parametrize("typ,lo,hi,bits", PARAMS)

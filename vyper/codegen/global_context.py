@@ -4,7 +4,7 @@ from vyper import ast as vy_ast
 from vyper.ast.signatures.function_signature import FunctionSignature, VariableRecord
 from vyper.codegen.types import parse_type
 from vyper.exceptions import CompilerPanic, InvalidType, StructureException
-from vyper.semantics.types.user.enum import EnumPrimitive
+from vyper.semantics.types import EnumT
 from vyper.typing import InterfaceImports
 from vyper.utils import cached_property
 
@@ -57,11 +57,11 @@ class GlobalContext:
                 continue
 
             elif isinstance(item, vy_ast.EnumDef):
-                global_ctx._enums[item.name] = EnumPrimitive.from_EnumDef(item)
+                global_ctx._enums[item.name] = EnumT.from_EnumDef(item)
 
             # Statements of the form:
             # variable_name: type
-            elif isinstance(item, vy_ast.AnnAssign):
+            elif isinstance(item, vy_ast.VariableDecl):
                 global_ctx.add_globals_and_events(item)
             # Function definitions
             elif isinstance(item, vy_ast.FunctionDef):
@@ -148,13 +148,6 @@ class GlobalContext:
                 raise StructureException("Invalid contract reference", item)
         return _defs
 
-    @staticmethod
-    def get_call_func_name(item):
-        if isinstance(item.annotation, vy_ast.Call) and isinstance(
-            item.annotation.func, vy_ast.Name
-        ):
-            return item.annotation.func.id
-
     def add_globals_and_events(self, item):
 
         if self._nonrentrant_counter:
@@ -165,30 +158,24 @@ class GlobalContext:
             raise StructureException("Invalid global variable name", item.target)
 
         # Handle constants.
-        if self.get_call_func_name(item) == "constant":
+        if item.is_constant:
             return
 
         # references to `len(self._globals)` are remnants of deprecated code, retained
         # to preserve existing interfaces while we complete a larger refactor. location
         # and size of storage vars is handled in `vyper.context.validation.data_positions`
-        if self.get_call_func_name(item) == "public":
-            typ = self.parse_type(item.annotation.args[0])
-            self._globals[item.target.id] = VariableRecord(
-                item.target.id, len(self._globals), typ, True
-            )
-        elif self.get_call_func_name(item) == "immutable":
-            typ = self.parse_type(item.annotation.args[0])
-            self._globals[item.target.id] = VariableRecord(
-                item.target.id, len(self._globals), typ, False, is_immutable=True
-            )
+        typ = self.parse_type(item.annotation)
+        is_immutable = item.is_immutable
+        self._globals[item.target.id] = VariableRecord(
+            item.target.id,
+            len(self._globals),
+            typ,
+            mutable=not is_immutable,
+            is_immutable=is_immutable,
+        )
 
-        elif isinstance(item.annotation, (vy_ast.Name, vy_ast.Call, vy_ast.Subscript)):
-            typ = self.parse_type(item.annotation)
-            self._globals[item.target.id] = VariableRecord(
-                item.target.id, len(self._globals), typ, True
-            )
-        else:
-            raise InvalidType("Invalid global type specified", item)
+        # hack. fix me -- merge GlobalContext with semantics pass ModuleInfo
+        self._globals[item.target.id]._varinfo = item.target._metadata["varinfo"]
 
     @property
     def interface_names(self):

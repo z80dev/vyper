@@ -18,7 +18,7 @@ extras_require = {
         "py-evm>=0.5.0a3,<0.6",
         "web3==5.27.0",
         "tox>=3.15,<4.0",
-        "lark-parser==0.10.0",
+        "lark==1.1.2",
         "hypothesis[lark]>=5.37.1,<6.0",
     ],
     "lint": [
@@ -92,9 +92,9 @@ setup(
     python_requires=">=3.7,<3.11",
     py_modules=["vyper"],
     install_requires=[
-        "asttokens==2.0.5",
+        "asttokens>=2.0.5,<3",
         "pycryptodome>=3.5.1,<4",
-        "semantic-version==2.8.5",
+        "semantic-version>=2.10,<3",
         "cached-property==1.5.2 ; python_version<'3.8'",
         "importlib-metadata ; python_version<'3.8'",
         "wheel",
@@ -113,10 +113,10 @@ setup(
     classifiers=[
         "Intended Audience :: Developers",
         "License :: OSI Approved :: Apache Software License",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
     ],
+    package_data={"vyper.ast": ["grammar.lark"]},
     data_files=[("", [hash_file_rel_path])],
 )

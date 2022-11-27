@@ -69,7 +69,7 @@ def _pack_arguments(fn_type, args, context):
     # to buf (and also keep code size small) by using
     # (mstore buf (shl signature.method_id 224))
     pack_args = ["seq"]
-    pack_args.append(["mstore", buf, util.abi_method_id(abi_signature)])
+    pack_args.append(["mstore", buf, util.method_id_int(abi_signature)])
 
     if len(args) != 0:
         pack_args.append(abi_encode(buf + 32, args_as_tuple, context, bufsz=buflen))
@@ -111,7 +111,11 @@ def _unpack_returndata(buf, fn_type, call_kwargs, contract_address, context, exp
     # revert when returndatasize is not in bounds
     # (except when return_override is provided.)
     if not call_kwargs.skip_contract_check:
-        unpacker.append(["assert", ["ge", "returndatasize", min_return_size]])
+        assertion = IRnode.from_list(
+            ["assert", ["ge", "returndatasize", min_return_size]],
+            error_msg="returndatasize too small",
+        )
+        unpacker.append(assertion)
 
     assert isinstance(wrapped_return_t, TupleType)
 
@@ -167,7 +171,7 @@ def _parse_kwargs(call_expr, context):
 
 
 def _extcodesize_check(address):
-    return ["assert", ["extcodesize", address]]
+    return IRnode.from_list(["assert", ["extcodesize", address]], error_msg="extcodesize is zero")
 
 
 def _external_call_helper(contract_address, args_ir, call_kwargs, call_expr, context):

@@ -27,7 +27,7 @@ from vyper.semantics.analysis.utils import (
     validate_expected_type,
     validate_unique_method_ids,
 )
-from vyper.semantics.namespace import get_namespace
+from vyper.semantics.namespace import get_namespace, override_global_namespace, Namespace
 from vyper.semantics.types import EnumT, EventT, InterfaceT, StructT
 from vyper.semantics.types.function import ContractFunction
 from vyper.semantics.types.utils import type_from_annotation
@@ -68,6 +68,8 @@ class ModuleNodeVisitor(VyperNodeVisitorBase):
         self.interface_codes = interface_codes or {}
         self.namespace = namespace
 
+        self.namespace["self"] = VarInfo(InterfaceT(module_node.name, {}, {}))#.from_ast(module_node))
+
         module_nodes = module_node.body.copy()
         while module_nodes:
             count = len(module_nodes)
@@ -88,8 +90,8 @@ class ModuleNodeVisitor(VyperNodeVisitorBase):
             if count == len(module_nodes):
                 err_list.raise_if_not_empty()
 
-        # generate an `InterfacePrimitive` from the top-level node - used for building the ABI
-        interface = InterfaceT.from_ast(module_node)
+        # generate an `InterfaceT` from the top-level node - used for building the ABI
+        interface = self.namespace["self"]
         module_node._metadata["type"] = interface
         self.interface = interface  # this is useful downstream
 
@@ -316,9 +318,13 @@ def _add_import(
         raise UndeclaredDefinition(f"Unknown interface: {name}. {suggestions_str}", node)
 
     if interface_codes[name]["type"] == "vyper":
-        module_ast = vy_ast.parse_to_ast(interface_codes[name]["code"], contract_name=name)
-        type_ = namespace["interface"].build_primitive_from_node(module_ast)
-        namespace[name] = module_ast
+        if "_analysis" not in interface_codes[name]:
+            module_ast = vy_ast.parse_to_ast(interface_codes[name]["code"], contract_name=name)
+            from vyper.semantics.analysis import validate_semantics
+            with override_global_namespace(Namespace()):
+                validate_semantics(module_ast, interface_codes)
+            interface_codes[name]["_analysis"] = module_ast._metadata["type"]
+        type_ = interface_codes[name]["_analysis"]
     elif interface_codes[name]["type"] == "json":
         type_ = InterfaceT.from_json_abi(name, interface_codes[name]["code"])  # type: ignore
     else:

@@ -69,13 +69,13 @@ class Namespace(dict):
         All items that are added within the context are removed upon exit.
         """
         # NOTE cyclic imports!
-        from vyper.semantics import environment
+        #from vyper.semantics import environment
 
         self._scopes.append(set())
 
-        if len(self._scopes) == 1:
-            # add mutable vars (`self`) to the initial scope
-            self.update(environment.get_mutable_vars())
+        #if len(self._scopes) == 1:
+        #    # add mutable vars (`self`) to the initial scope
+        #    self.update(environment.get_mutable_vars())
 
         return self
 

@@ -124,10 +124,10 @@ class Stmt:
     def parse_Call(self):
         # TODO use expr.func.type.is_internal once type annotations
         # are consistently available.
-        is_self_function = (
+        is_internal_call = (
             (isinstance(self.stmt.func, vy_ast.Attribute))
             and isinstance(self.stmt.func.value, vy_ast.Name)
-            and self.stmt.func.value.id == "self"
+            and self.stmt.func.value.id in self.context.sigs
         )
 
         if isinstance(self.stmt.func, vy_ast.Name):
@@ -153,7 +153,7 @@ class Stmt:
                 assert len(args) == 0
                 return pop_dyn_array(darray, return_popped_item=False)
 
-        elif is_self_function:
+        elif is_internal_call:
             return self_call.ir_for_self_call(self.stmt, self.context)
         else:
             return external_call.ir_for_external_call(self.stmt, self.context)

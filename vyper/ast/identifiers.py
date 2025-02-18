@@ -64,6 +64,7 @@ RESERVED_KEYWORDS = _PYTHON_RESERVED_KEYWORDS | {
     "internal",
     "payable",
     "nonreentrant",
+    "virtual",
     # "class" keywords
     "interface",
     "struct",

@@ -20,6 +20,7 @@ from vyper.semantics.analysis.base import (
     FunctionVisibility,
     Modifiability,
     ModuleInfo,
+    Overridability,
     StateMutability,
     VarAccess,
     VarOffset,
@@ -729,6 +730,7 @@ def _parse_decorators(
 ) -> tuple[Optional[FunctionVisibility], StateMutability, bool]:
     function_visibility = None
     state_mutability = None
+    is_virtual = False
     nonreentrant_node = None
 
     for decorator in funcdef.decorator_list:
@@ -758,12 +760,25 @@ def _parse_decorators(
 
                 function_visibility = FunctionVisibility(decorator.id)
 
+                if function_visibility is not FunctionVisibility.EXTERNAL:
+                    if is_virtual:
+                        raise FunctionDeclarationException(
+                            "Only external functions can be marked as `@virtual`", decorator
+                        )
+
+
             elif StateMutability.is_valid_value(decorator.id):
                 if state_mutability is not None:
                     raise FunctionDeclarationException(
                         f"Mutability is already set to: {state_mutability}", funcdef
                     )
                 state_mutability = StateMutability(decorator.id)
+
+            elif Overridability.is_valid_value(decorator.id):
+                if function_visibility and function_visibility is not FunctionVisibility.EXTERNAL:
+                    raise FunctionDeclarationException(
+                        "Only external functions can be marked as `@virtual`", decorator
+                    )
 
             else:
                 if decorator.id == "constant":

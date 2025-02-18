@@ -21,6 +21,8 @@ class FunctionVisibility(StringEnum):
     INTERNAL = enum.auto()
     DEPLOY = enum.auto()
 
+class Overridability(StringEnum):
+    VIRTUAL = enum.auto()
 
 class StateMutability(StringEnum):
     PURE = enum.auto()
